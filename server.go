@@ -71,12 +71,12 @@ func (s *Server) Serve() {
 				default:
 					log.Fatal("accept error: ", err)
 				}
-				s.wg.Add(1)
-				go func() {
-					s.rpcServer.ServeConn(conn)
-					s.wg.Done()
-				}()
 			}
+			s.wg.Add(1)
+			go func() {
+				s.rpcServer.ServeConn(conn)
+				s.wg.Done()
+			}()
 		}
 	}()
 }
@@ -111,6 +111,7 @@ func (s *Server) ConnectToPeer(peerID int, addr net.Addr) error {
 	if s.peerClients[peerID] == nil {
 		client, err := rpc.Dial(addr.Network(), addr.String())
 		if err != nil {
+			log.Printf("[%d] Error ConnectToPeer peerID = %d: %s", s.ID, peerID, err.Error())
 			return err
 		}
 		s.peerClients[peerID] = client
@@ -142,12 +143,6 @@ func (s *Server) Call(ID int, serviceMethod string, args interface{}, reply inte
 		return peer.Call(serviceMethod, args, reply)
 	}
 }
-
-// func (rpp *RPCProxy) Hello(args HelloArgs, reply *HelloReply) error {
-// 	time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
-
-// 	return rpp.r.Hello(args, reply)
-// }
 
 func (rpp *RPCProxy) Commit(args CommitArgs, reply *CommitReply) error {
 	time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)

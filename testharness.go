@@ -117,7 +117,6 @@ func (h *Harness) CheckSinglePrimary() (int, int) {
 	// 	primaryView := -1
 	// 	for i := 0; i < h.n; i++ {
 	// 		if h.connected[i] {
-	// 			h.t.Log(primaryID)
 	// 			_, view, replicaPrimaryID := h.cluster[i].replica.Report()
 	// 			if primaryID < 0 {
 	// 				primaryID = replicaPrimaryID
@@ -136,7 +135,7 @@ func (h *Harness) CheckSinglePrimary() (int, int) {
 	// 	time.Sleep(150 * time.Millisecond)
 	// }
 
-	// h.t.Fatalf("Primary not found")
+	h.t.Fatalf("Primary not found")
 	return -1, -1
 }
 

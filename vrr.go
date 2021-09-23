@@ -152,7 +152,7 @@ func (r *Replica) becomePrimary() {
 		defer ticker.Stop()
 
 		for {
-			r.sendPrimaryPeriodCommits()
+			r.sendPrimaryPeriodicCommits()
 			<-ticker.C
 
 			r.mu.Lock()
@@ -165,7 +165,7 @@ func (r *Replica) becomePrimary() {
 	}()
 }
 
-func (r *Replica) sendPrimaryPeriodCommits() {
+func (r *Replica) sendPrimaryPeriodicCommits() {
 	r.mu.Lock()
 	savedViewNum := r.viewNum
 	savedCommitNum := r.commitNum
@@ -179,11 +179,10 @@ func (r *Replica) sendPrimaryPeriodCommits() {
 		}
 
 		go func(peerID int) {
-			r.dlog("sending periodic <COMMIT> as heartbeat to %d; args=%+v", peerID, args)
+			r.dlog("sending <COMMIT> as period heartbeat to %d; args=%+v", peerID, args)
 			var reply CommitReply
 
-			err := r.server.Call(peerID, "Replica.Commit", args, &reply)
-			if err != nil {
+			if err := r.server.Call(peerID, "Replica.Commit", args, &reply); err == nil {
 				r.mu.Lock()
 				defer r.mu.Unlock()
 
@@ -207,10 +206,10 @@ type CommitReply struct {
 	IsReplied bool
 	ReplicaID int
 	ViewNum   int
+	Status    string
 }
 
 func (r *Replica) Commit(args CommitArgs, reply *CommitReply) error {
-	r.dlog("JOBEL")
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -223,6 +222,7 @@ func (r *Replica) Commit(args CommitArgs, reply *CommitReply) error {
 		r.viewChangeResetEvent = time.Now()
 		reply.IsReplied = true
 		reply.ReplicaID = r.ID
+		reply.Status = r.status.String()
 	}
 
 	reply.ViewNum = r.viewNum
@@ -230,22 +230,3 @@ func (r *Replica) Commit(args CommitArgs, reply *CommitReply) error {
 
 	return nil
 }
-
-// type HelloArgs struct {
-// 	ID int
-// }
-
-// type HelloReply struct {
-// 	ID int
-// }
-
-// func (r *Replica) Hello(args HelloArgs, reply *HelloReply) error {
-// 	r.mu.Lock()
-// 	defer r.mu.Unlock()
-// 	if r.status == Dead {
-// 		return nil
-// 	}
-// 	r.dlog("received the greetings from %d! :)", args.ID)
-// 	reply.ID = r.ID
-// 	return nil
-// }
