@@ -45,9 +45,7 @@ func NewHarness(t *testing.T, n int) *Harness {
 		configuration := make(map[int]string)
 		for j := 0; j < n; j++ {
 			if j != i {
-				// fmt.Println(ns[j].GetListenAddr().String())
 				configuration[j] = ns[j].GetListenAddr().String()
-				// fmt.Println(configuration)
 			}
 			err := ns[i].ConnectToPeer(j, ns[j].GetListenAddr())
 			if err != nil {
@@ -112,28 +110,28 @@ func (h *Harness) ReconnectPeer(ID int) {
 func (h *Harness) CheckSinglePrimary() (int, int) {
 	time.Sleep(1 * time.Second)
 
-	// for r := 0; r < 5; r++ {
-	// 	primaryID := -1
-	// 	primaryView := -1
-	// 	for i := 0; i < h.n; i++ {
-	// 		if h.connected[i] {
-	// 			_, view, replicaPrimaryID := h.cluster[i].replica.Report()
-	// 			if primaryID < 0 {
-	// 				primaryID = replicaPrimaryID
-	// 				primaryView = view
-	// 			} else {
-	// 				if primaryID != replicaPrimaryID {
-	// 					h.t.Fatalf("both %d and %d think they are primary", primaryID, replicaPrimaryID)
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// 	if primaryID >= 0 && primaryView == 3 {
-	// 		h.t.Logf("primaryID = %v, primaryView = %v, Check Single Primary done", primaryID, primaryView)
-	// 		return primaryID, primaryView
-	// 	}
-	// 	time.Sleep(150 * time.Millisecond)
-	// }
+	for r := 0; r < 5; r++ {
+		primaryID := -1
+		primaryView := -1
+		for i := 0; i < h.n; i++ {
+			if h.connected[i] {
+				_, view, replicaPrimaryID := h.cluster[i].replica.Report()
+				if primaryID < 0 {
+					primaryID = replicaPrimaryID
+					primaryView = view
+				} else {
+					if primaryID != replicaPrimaryID {
+						h.t.Fatalf("both %d and %d think they are primary", primaryID, replicaPrimaryID)
+					}
+				}
+			}
+		}
+		if primaryID >= 0 {
+			h.t.Logf("primaryID = %v, primaryView = %v, Check Single Primary done", primaryID, primaryView)
+			return primaryID, primaryView
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 
 	h.t.Fatalf("Primary not found")
 	return -1, -1
