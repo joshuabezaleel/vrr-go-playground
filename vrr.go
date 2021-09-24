@@ -134,7 +134,6 @@ func (r *Replica) runViewChangeTimer() {
 		r.mu.Lock()
 
 		if r.status == ViewChange {
-			r.dlog("JENGJENG")
 			r.blastStartViewChange()
 			r.mu.Unlock()
 			return
@@ -162,9 +161,22 @@ func (r *Replica) initiateViewChange() {
 	go r.runViewChangeTimer()
 }
 
+func nextPrimary(primaryID int, config map[int]string) int {
+	nextPrimaryID := primaryID + 1
+	if nextPrimaryID == len(config)+1 {
+		nextPrimaryID = 0
+	}
+
+	return nextPrimaryID
+}
+
 func (r *Replica) blastStartViewChange() {
 	var repliesReceived int32 = 1
 	savedViewNum := r.viewNum
+	savedOldViewNum := r.oldViewNum
+	savedCommitNum := r.commitNum
+	savedOpNum := r.opNum
+	savedOpLog := r.opLog
 	// This variable is used as a marker if the replica already send <DO-VIEW-CHANGE> to
 	// the next designated primary after the quorum acknowledged and agreed on View-Change.
 	// This is to prevent sending <DO-VIEW-CHANGE> multiple times by this same replica to the new primary.
@@ -187,7 +199,25 @@ func (r *Replica) blastStartViewChange() {
 					replies := int(atomic.AddInt32(&repliesReceived, 1))
 					r.dlog("replies = %v", replies)
 					if replies*2 > len(r.configuration)+1 {
-						r.dlog("QUORUM FOR VIEW CHANGE")
+						sendDoViewChangeAlready = true
+
+						nextPrimaryID := nextPrimary(r.primaryID, r.configuration)
+
+						args := DoViewChangeArgs{
+							ViewNum:    savedViewNum,
+							OldViewNum: savedOldViewNum,
+							CommitNum:  savedCommitNum,
+							OpNum:      savedOpNum,
+							OpLog:      savedOpLog,
+						}
+						var reply DoViewChangeReply
+
+						r.dlog("acknowledge that quorum agrees on a View Change, sending <DO-VIEW-CHANGE> to the new designated primary %d, %+v", nextPrimaryID, args)
+						if err := r.server.Call(nextPrimaryID, "Replica.DoViewChange", args, &reply); err == nil {
+							return
+						}
+
+						return
 					}
 				}
 				r.dlog("received <START-VIEW-CHANGE reply %+v", reply)
@@ -226,6 +256,36 @@ func (r *Replica) StartViewChange(args StartViewChangeArgs, reply *StartViewChan
 	}
 
 	r.dlog("START-VIEW-CHANGE replied: %+v", *reply)
+	return nil
+}
+
+type DoViewChangeArgs struct {
+	ViewNum    int
+	OldViewNum int
+	CommitNum  int
+	OpNum      int
+	OpLog      []interface{}
+}
+
+type DoViewChangeReply struct {
+	IsReplied bool
+	ReplicaID int
+}
+
+func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == Dead {
+		return nil
+	}
+	r.dlog("DoViewChange: %+v [currentView = %d]", args, r.viewNum)
+
+	reply.IsReplied = true
+	reply.ReplicaID = r.ID
+
+	r.dlog("... StartViewChange replied: %+v", reply)
+
 	return nil
 }
 
