@@ -77,7 +77,7 @@ func NewReplica(ID int, configuration map[int]string, server *Server, ready <-ch
 	replica.configuration = configuration
 	replica.server = server
 	replica.oldViewNum = -1
-	replica.doViewChangeCount = 0
+	replica.doViewChangeCount = 1
 	replica.peerInformation = make([]backupReplicaInformation, 0)
 
 	replica.status = Normal
@@ -153,7 +153,8 @@ func (r *Replica) runViewChangeTimer() {
 // The replica will initiate view change and send <START-VIEW-CHANGE> messages to ask for quorum to all other replicas
 func (r *Replica) initiateViewChange() {
 	r.status = ViewChange
-	r.doViewChangeCount = 0
+	// DoViewChangeCount start from 1 to count its own vote.
+	r.doViewChangeCount = 1
 	r.viewNum++
 	r.viewChangeResetEvent = time.Now()
 	r.dlog("TIMEOUT; initiates VIEW-CHANGE: view = %d", r.viewNum)
