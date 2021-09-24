@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -87,6 +88,7 @@ func NewReplica(ID int, configuration map[int]string, server *Server, ready <-ch
 		replica.viewChangeResetEvent = time.Now()
 		replica.mu.Unlock()
 
+		// Replica [0] has been designated as primary from the beginning.
 		if replica.ID != replica.primaryID {
 			replica.runViewChangeTimer()
 		} else {
@@ -131,14 +133,100 @@ func (r *Replica) runViewChangeTimer() {
 
 		r.mu.Lock()
 
+		if r.status == ViewChange {
+			r.dlog("JENGJENG")
+			r.blastStartViewChange()
+			r.mu.Unlock()
+			return
+		}
+
 		if elapsed := time.Since(r.viewChangeResetEvent); elapsed >= timeoutDuration {
-			r.dlog("TIMEOUT!")
+			r.initiateViewChange()
 			r.mu.Unlock()
 			return
 		}
 
 		r.mu.Unlock()
 	}
+}
+
+// When the timeout timer at a particular replica expired after not hearing from the primary after some time,
+// The replica will initiate view change and send <START-VIEW-CHANGE> messages to ask for quorum to all other replicas
+func (r *Replica) initiateViewChange() {
+	r.status = ViewChange
+	r.doViewChangeCount = 0
+	r.viewNum++
+	r.viewChangeResetEvent = time.Now()
+	r.dlog("TIMEOUT; initiates VIEW-CHANGE: view = %d", r.viewNum)
+
+	go r.runViewChangeTimer()
+}
+
+func (r *Replica) blastStartViewChange() {
+	var repliesReceived int32 = 1
+	savedViewNum := r.viewNum
+	// This variable is used as a marker if the replica already send <DO-VIEW-CHANGE> to
+	// the next designated primary after the quorum acknowledged and agreed on View-Change.
+	// This is to prevent sending <DO-VIEW-CHANGE> multiple times by this same replica to the new primary.
+	var sendDoViewChangeAlready bool = false
+
+	for peerID := range r.configuration {
+		args := StartViewChangeArgs{
+			ViewNum:   savedViewNum,
+			ReplicaID: r.ID,
+		}
+		var reply StartViewChangeReply
+
+		go func(peerID int) {
+			r.dlog("sending <START-VIEW-CHANGE> to %d: %+v", peerID, args)
+			if err := r.server.Call(peerID, "Replica.StartViewChange", args, &reply); err == nil {
+				r.mu.Lock()
+				defer r.mu.Unlock()
+
+				if reply.IsReplied && !sendDoViewChangeAlready {
+					replies := int(atomic.AddInt32(&repliesReceived, 1))
+					r.dlog("replies = %v", replies)
+					if replies*2 > len(r.configuration)+1 {
+						r.dlog("QUORUM FOR VIEW CHANGE")
+					}
+				}
+				r.dlog("received <START-VIEW-CHANGE reply %+v", reply)
+			}
+		}(peerID)
+	}
+}
+
+type StartViewChangeArgs struct {
+	ViewNum   int
+	ReplicaID int
+}
+
+type StartViewChangeReply struct {
+	IsReplied bool
+	ReplicaID int
+}
+
+func (r *Replica) StartViewChange(args StartViewChangeArgs, reply *StartViewChangeReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == Dead {
+		return nil
+	}
+	r.dlog("START-VIEW-CHANGE: %+v [currentView = %d]", args, r.viewNum)
+
+	reply.IsReplied = true
+	reply.ReplicaID = r.ID
+
+	if args.ViewNum > r.viewNum {
+		r.status = ViewChange
+		r.oldViewNum = r.viewNum
+		r.viewNum = args.ViewNum
+		r.viewChangeResetEvent = time.Now()
+	}
+
+	r.dlog("START-VIEW-CHANGE replied: %+v", *reply)
+	return nil
 }
 
 func (r *Replica) becomePrimary() {

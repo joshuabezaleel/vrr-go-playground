@@ -149,3 +149,9 @@ func (rpp *RPCProxy) Commit(args CommitArgs, reply *CommitReply) error {
 
 	return rpp.r.Commit(args, reply)
 }
+
+func (rpp *RPCProxy) StartViewChange(args StartViewChangeArgs, reply *StartViewChangeReply) error {
+	time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+
+	return rpp.r.StartViewChange(args, reply)
+}
