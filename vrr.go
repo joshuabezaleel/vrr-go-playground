@@ -77,7 +77,7 @@ func NewReplica(ID int, configuration map[int]string, server *Server, ready <-ch
 	replica.configuration = configuration
 	replica.server = server
 	replica.oldViewNum = -1
-	replica.doViewChangeCount = 1
+	replica.doViewChangeCount = 0
 	replica.peerInformation = make([]backupReplicaInformation, 0)
 
 	replica.status = Normal
@@ -153,8 +153,7 @@ func (r *Replica) runViewChangeTimer() {
 // The replica will initiate view change and send <START-VIEW-CHANGE> messages to ask for quorum to all other replicas
 func (r *Replica) initiateViewChange() {
 	r.status = ViewChange
-	// DoViewChangeCount start from 1 to count its own vote.
-	r.doViewChangeCount = 1
+	r.doViewChangeCount = 0
 	r.viewNum++
 	r.viewChangeResetEvent = time.Now()
 	r.dlog("TIMEOUT; initiates VIEW-CHANGE: view = %d", r.viewNum)
@@ -198,7 +197,6 @@ func (r *Replica) blastStartViewChange() {
 
 				if reply.IsReplied && !sendDoViewChangeAlready {
 					replies := int(atomic.AddInt32(&repliesReceived, 1))
-					r.dlog("replies = %v", replies)
 					if replies*2 > len(r.configuration)+1 {
 						sendDoViewChangeAlready = true
 
@@ -216,6 +214,8 @@ func (r *Replica) blastStartViewChange() {
 						r.dlog("acknowledge that quorum agrees on a View Change, sending <DO-VIEW-CHANGE> to the new designated primary %d, %+v", nextPrimaryID, args)
 						if err := r.server.Call(nextPrimaryID, "Replica.DoViewChange", args, &reply); err == nil {
 							return
+						} else {
+							r.dlog("Error Replica.DoViewChange = %v", err.Error())
 						}
 
 						return
@@ -274,8 +274,8 @@ type DoViewChangeReply struct {
 }
 
 func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// r.mu.Lock()
+	// defer r.mu.Unlock()
 
 	if r.status == Dead {
 		return nil
@@ -285,7 +285,10 @@ func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) 
 	reply.IsReplied = true
 	reply.ReplicaID = r.ID
 
-	r.dlog("... StartViewChange replied: %+v", reply)
+	r.doViewChangeCount++
+	r.dlog("DoViewChange messages received: %d", r.doViewChangeCount)
+
+	r.dlog("... DoViewChange replied: %+v", reply)
 
 	return nil
 }
