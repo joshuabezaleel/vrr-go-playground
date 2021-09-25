@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -197,12 +198,13 @@ func (r *Replica) blastStartViewChange() {
 
 				if reply.IsReplied && !sendDoViewChangeAlready {
 					replies := int(atomic.AddInt32(&repliesReceived, 1))
-					if replies*2 > len(r.configuration)+1 {
+					if replies*2 >= len(r.configuration)+1 {
 						sendDoViewChangeAlready = true
 
 						nextPrimaryID := nextPrimary(r.primaryID, r.configuration)
 
 						args := DoViewChangeArgs{
+							ReplicaID:  r.ID,
 							ViewNum:    savedViewNum,
 							OldViewNum: savedOldViewNum,
 							CommitNum:  savedCommitNum,
@@ -222,6 +224,8 @@ func (r *Replica) blastStartViewChange() {
 					}
 				}
 				r.dlog("received <START-VIEW-CHANGE reply %+v", reply)
+
+				// r.mu.Unlock()
 			}
 		}(peerID)
 	}
@@ -261,6 +265,7 @@ func (r *Replica) StartViewChange(args StartViewChangeArgs, reply *StartViewChan
 }
 
 type DoViewChangeArgs struct {
+	ReplicaID  int
 	ViewNum    int
 	OldViewNum int
 	CommitNum  int
@@ -274,9 +279,6 @@ type DoViewChangeReply struct {
 }
 
 func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) error {
-	// r.mu.Lock()
-	// defer r.mu.Unlock()
-
 	if r.status == Dead {
 		return nil
 	}
@@ -285,11 +287,88 @@ func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) 
 	reply.IsReplied = true
 	reply.ReplicaID = r.ID
 
+	// r.mu.Lock()
+
 	r.doViewChangeCount++
+	r.peerInformation = append(r.peerInformation, backupReplicaInformation{replicaID: args.ReplicaID, viewNum: args.ViewNum, oldViewNum: args.OldViewNum, opNum: args.OpNum, opLog: args.OpLog, commitNum: args.CommitNum})
 	r.dlog("DoViewChange messages received: %d", r.doViewChangeCount)
+
+	// r.mu.Unlock()
+
+	if r.doViewChangeCount*2 > len(r.configuration)+1 {
+		// Sort messages received by the next designated primary from all of the backup replicas.
+		sort.Slice(r.peerInformation, func(i, j int) bool {
+			if r.peerInformation[i].viewNum != r.peerInformation[j].viewNum {
+				return r.peerInformation[i].viewNum > r.peerInformation[j].viewNum
+			}
+			if r.peerInformation[i].oldViewNum != r.peerInformation[j].oldViewNum {
+				return r.peerInformation[i].oldViewNum > r.peerInformation[j].oldViewNum
+			}
+			if r.peerInformation[i].opNum != r.peerInformation[j].opNum {
+				return r.peerInformation[i].opNum > r.peerInformation[j].opNum
+			}
+			if r.peerInformation[i].commitNum != r.peerInformation[j].commitNum {
+				return r.peerInformation[i].commitNum > r.peerInformation[j].commitNum
+			}
+			return true
+		})
+
+		mostUpToDateBackupReplica := r.peerInformation[0]
+		r.dlog("becomes the new Primary; receiving new state from %d as the most up-to-date backup replicas: %+v", mostUpToDateBackupReplica.replicaID, mostUpToDateBackupReplica)
+
+		// TODO:
+		// Uncomment this later
+		// oldCommitNum := r.commitNum
+		//
+		// For the below operation, upon receiving new state from the most up-to-date backup replicas,
+		// Also execute all of the uncommited operations.
+		r.viewNum = mostUpToDateBackupReplica.viewNum
+		r.oldViewNum = mostUpToDateBackupReplica.oldViewNum
+		r.commitNum = mostUpToDateBackupReplica.commitNum
+		r.opNum = mostUpToDateBackupReplica.opNum
+		r.opLog = mostUpToDateBackupReplica.opLog
+
+		r.blastStartViewAsPrimary()
+	}
 
 	r.dlog("... DoViewChange replied: %+v", reply)
 
+	return nil
+}
+
+func (r *Replica) blastStartViewAsPrimary() {
+	for peerID := range r.configuration {
+		args := StartViewArgs{
+			PrimaryID: r.ID,
+			ViewNum:   r.viewNum,
+			CommitNum: r.commitNum,
+			OpNum:     r.commitNum,
+			OpLog:     r.opLog,
+		}
+
+		go func(peerID int) {
+
+		}(peerID)
+	}
+
+	r.becomePrimary()
+	return
+}
+
+type StartViewArgs struct {
+	PrimaryID int
+	ViewNum   int
+	CommitNum int
+	OpNum     int
+	OpLog     []interface{}
+}
+
+type StartViewReply struct {
+	IsReplied bool
+	ReplicaID int
+}
+
+func (r *Replica) StartView(args StartViewArgs, reply *StartViewReply) error {
 	return nil
 }
 
