@@ -347,7 +347,15 @@ func (r *Replica) blastStartViewAsPrimary() {
 		}
 
 		go func(peerID int) {
+			r.dlog("sending START-VIEW to %d; args %+v", peerID, args)
+			var reply StartViewReply
 
+			if err := r.server.Call(peerID, "Replica.StartView", args, &reply); err == nil {
+				r.mu.Lock()
+				defer r.mu.Unlock()
+			} else {
+				r.dlog(err.Error())
+			}
 		}(peerID)
 	}
 
