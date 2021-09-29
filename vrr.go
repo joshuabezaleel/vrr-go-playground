@@ -159,6 +159,7 @@ func (r *Replica) initiateViewChange() {
 	r.viewChangeResetEvent = time.Now()
 	r.dlog("TIMEOUT; initiates VIEW-CHANGE: view = %d", r.viewNum)
 
+	// Run another View-Change timer, in case this View-Change is not successful.
 	go r.runViewChangeTimer()
 }
 
@@ -224,8 +225,6 @@ func (r *Replica) blastStartViewChange() {
 					}
 				}
 				r.dlog("received <START-VIEW-CHANGE reply %+v", reply)
-
-				// r.mu.Unlock()
 			}
 		}(peerID)
 	}
@@ -295,7 +294,11 @@ func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) 
 
 	// r.mu.Unlock()
 
-	if r.doViewChangeCount*2 > len(r.configuration)+1 {
+	// The second condition (r.iD != r.primaryID) acts like sendDoViewChangeAlready variable
+	// which the designated primary to execute state transfer from another
+	// backup replicas and chose itself as primary again
+	// if it's already being the primary of the cluster.
+	if r.doViewChangeCount*2 > len(r.configuration)+1 && r.ID != r.primaryID {
 		// Sort messages received by the next designated primary from all of the backup replicas.
 		sort.Slice(r.peerInformation, func(i, j int) bool {
 			if r.peerInformation[i].viewNum != r.peerInformation[j].viewNum {
@@ -320,6 +323,7 @@ func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) 
 		// Uncomment this later
 		// oldCommitNum := r.commitNum
 		//
+		// TODO:
 		// For the below operation, upon receiving new state from the most up-to-date backup replicas,
 		// Also execute all of the uncommited operations.
 		r.viewNum = mostUpToDateBackupReplica.viewNum
@@ -353,8 +357,6 @@ func (r *Replica) blastStartViewAsPrimary() {
 			if err := r.server.Call(peerID, "Replica.StartView", args, &reply); err == nil {
 				r.mu.Lock()
 				defer r.mu.Unlock()
-			} else {
-				r.dlog(err.Error())
 			}
 		}(peerID)
 	}
@@ -377,16 +379,43 @@ type StartViewReply struct {
 }
 
 func (r *Replica) StartView(args StartViewArgs, reply *StartViewReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == Dead {
+		return nil
+	}
+	r.dlog("START-VIEW: %+v", args)
+
+	r.opLog = args.OpLog
+	r.opNum = args.OpNum
+	r.viewNum = args.ViewNum
+	r.status = Normal
+	r.primaryID = args.PrimaryID
+
+	// TODO: Execute all operation from old commitNum to the new commitNum
+	// and send <PREPARE-OK> for all operation in OpLog which haven't been committed yet.
+
+	reply.IsReplied = true
+	reply.ReplicaID = r.ID
+	r.dlog("StartView reply: %+v", *reply)
+
+	// This is equals to becomeFollower() along with the state transfer of the replica properties'
+	// on the few lines above.
+	r.doViewChangeCount = 0
+	r.viewChangeResetEvent = time.Now()
+	go r.runViewChangeTimer()
+
 	return nil
 }
 
 func (r *Replica) becomePrimary() {
 	r.mu.Lock()
+	r.primaryID = r.ID
 	r.status = Normal
 	r.mu.Unlock()
 
 	go func() {
-
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -418,7 +447,7 @@ func (r *Replica) sendPrimaryPeriodicCommits() {
 		}
 
 		go func(peerID int) {
-			r.dlog("sending <COMMIT> as period heartbeat to %d; args=%+v", peerID, args)
+			r.dlog("sending <COMMIT> as periodic heartbeat to %d; args=%+v", peerID, args)
 			var reply CommitReply
 
 			if err := r.server.Call(peerID, "Replica.Commit", args, &reply); err == nil {
@@ -427,7 +456,7 @@ func (r *Replica) sendPrimaryPeriodicCommits() {
 
 				if reply.ViewNum > savedViewNum {
 					r.dlog("one of backup replicas got bigger ViewNum, become backup replica")
-					// r.becomeBackupReplica(reply.ViewNum)
+					// TODO: r.becomeBackupReplica(reply.ViewNum)
 					return
 				}
 			}
