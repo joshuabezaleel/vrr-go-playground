@@ -455,8 +455,14 @@ func (r *Replica) sendPrimaryPeriodicCommits() {
 				defer r.mu.Unlock()
 
 				if reply.ViewNum > savedViewNum {
-					r.dlog("one of backup replicas got bigger ViewNum, become backup replica")
-					// TODO: r.becomeBackupReplica(reply.ViewNum)
+					r.dlog("one of backup replicas with the id of %d got bigger ViewNum, become backup replica", reply.ReplicaID)
+					r.status = Normal
+					r.doViewChangeCount = 0
+					r.viewChangeResetEvent = time.Now()
+					r.primaryID = reply.ReplicaID
+
+					go r.runViewChangeTimer()
+
 					return
 				}
 			}

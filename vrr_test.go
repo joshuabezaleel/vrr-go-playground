@@ -12,7 +12,7 @@ func TestHarnessBasic(t *testing.T) {
 }
 
 func TestViewChangePrimaryDisconnect(t *testing.T) {
-	h := NewHarness(t, 5)
+	h := NewHarness(t, 3)
 	defer h.Shutdown()
 
 	origPrimaryID, origView := h.CheckSinglePrimary()
