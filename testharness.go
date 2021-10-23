@@ -137,6 +137,13 @@ func (h *Harness) CheckSinglePrimary() (int, int) {
 	return -1, -1
 }
 
+func (h *Harness) ReportAll() {
+	for i := 0; i < h.n; i++ {
+		id, viewNum, primaryID := h.cluster[i].replica.Report()
+		h.t.Logf("id = %v, viewNum = %v, primaryID = %v", id, viewNum, primaryID)
+	}
+}
+
 func (h *Harness) CheckNoPrimary() {
 
 }

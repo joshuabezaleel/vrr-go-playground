@@ -495,6 +495,10 @@ func (r *Replica) Commit(args CommitArgs, reply *CommitReply) error {
 		reply.Status = r.status.String()
 	}
 
+	if args.ViewNum > r.viewNum {
+		r.status = Recovery
+	}
+
 	reply.ViewNum = r.viewNum
 	r.dlog("COMMIT reply: %+v", *reply)
 

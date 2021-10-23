@@ -27,4 +27,6 @@ func TestViewChangePrimaryDisconnect(t *testing.T) {
 	if newView <= origView {
 		t.Errorf("want newView > origView, got %d and %d", newView, origView)
 	}
+
+	h.ReportAll()
 }
