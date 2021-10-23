@@ -286,13 +286,9 @@ func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) 
 	reply.IsReplied = true
 	reply.ReplicaID = r.ID
 
-	// r.mu.Lock()
-
 	r.doViewChangeCount++
 	r.peerInformation = append(r.peerInformation, backupReplicaInformation{replicaID: args.ReplicaID, viewNum: args.ViewNum, oldViewNum: args.OldViewNum, opNum: args.OpNum, opLog: args.OpLog, commitNum: args.CommitNum})
 	r.dlog("DoViewChange messages received: %d", r.doViewChangeCount)
-
-	// r.mu.Unlock()
 
 	// The second condition (r.iD != r.primaryID) acts like sendDoViewChangeAlready variable
 	// which the designated primary to execute state transfer from another
