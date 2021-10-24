@@ -141,7 +141,6 @@ func (r *Replica) runViewChangeTimer() {
 		}
 
 		if r.status == Recovery {
-			r.dlog("RECOVERY!!")
 			r.stateTransfer()
 			r.mu.Unlock()
 			return
@@ -182,7 +181,8 @@ func (r *Replica) stateTransfer() {
 				r.viewNum = newStateReply.ViewNum
 				r.opNum = newStateReply.OpNum
 				r.commitNum = newStateReply.CommitNum
-				// TODO: r.opLog
+				r.primaryID = newStateReply.PrimaryID
+				// TODO: state transfer for r.opLog
 
 				r.dlog("received <NEW-STATE> reply %+v", newStateReply)
 			}
@@ -204,6 +204,7 @@ type NewStateReply struct {
 	CommitNum int
 	OpLog     []interface{}
 	ReplicaID int
+	PrimaryID int
 }
 
 func (r *Replica) StateTransfer(args GetStateArgs, reply *NewStateReply) error {
@@ -217,6 +218,7 @@ func (r *Replica) StateTransfer(args GetStateArgs, reply *NewStateReply) error {
 	reply.ViewNum = r.viewNum
 	reply.OpNum = r.opNum
 	reply.CommitNum = r.commitNum
+	reply.PrimaryID = r.primaryID
 
 	if r.viewNum == args.ViewNum {
 		// TODO:
@@ -538,10 +540,11 @@ func (r *Replica) sendPrimaryPeriodicCommits() {
 				if reply.ViewNum > savedViewNum {
 					r.dlog("one of backup replicas with the id of %d got bigger ViewNum, become backup replica", reply.ReplicaID)
 					r.status = Normal
-					r.doViewChangeCount = 0
-					r.viewChangeResetEvent = time.Now()
 					r.primaryID = reply.ReplicaID
 
+					// Become backup replica.
+					r.doViewChangeCount = 0
+					r.viewChangeResetEvent = time.Now()
 					go r.runViewChangeTimer()
 
 					return
@@ -581,7 +584,6 @@ func (r *Replica) Commit(args CommitArgs, reply *CommitReply) error {
 	}
 
 	if args.ViewNum > r.viewNum {
-		r.dlog("ARGS VIEWNUM GREATER")
 		r.status = Recovery
 	}
 
