@@ -30,3 +30,24 @@ func TestViewChangePrimaryDisconnect(t *testing.T) {
 
 	h.ReportAll()
 }
+
+func TestViewChangePrimaryDisconnectThenReconnect(t *testing.T) {
+	h := NewHarness(t, 3)
+	defer h.Shutdown()
+	origPrimaryID, _ := h.CheckSinglePrimary()
+
+	h.DisconnectPeer(origPrimaryID)
+
+	sleepMs(350)
+	newPrimaryID, newView := h.CheckSinglePrimary()
+
+	t.Logf("YOW %v %v", newPrimaryID, newView)
+
+	h.ReconnectPeer(origPrimaryID)
+	sleepMs(150)
+
+	newPrimaryID, newView = h.CheckSinglePrimary()
+	t.Logf("YOW %v %v", newPrimaryID, newView)
+
+	h.ReportAll()
+}

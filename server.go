@@ -167,3 +167,9 @@ func (rpp *RPCProxy) StartView(args StartViewArgs, reply *StartViewReply) error 
 
 	return rpp.r.StartView(args, reply)
 }
+
+func (rpp *RPCProxy) StateTransfer(args GetStateArgs, reply *NewStateReply) error {
+	time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+
+	return rpp.r.StateTransfer(args, reply)
+}

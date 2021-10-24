@@ -140,6 +140,13 @@ func (r *Replica) runViewChangeTimer() {
 			return
 		}
 
+		if r.status == Recovery {
+			r.dlog("RECOVERY!!")
+			r.stateTransfer()
+			r.mu.Unlock()
+			return
+		}
+
 		if elapsed := time.Since(r.viewChangeResetEvent); elapsed >= timeoutDuration {
 			r.initiateViewChange()
 			r.mu.Unlock()
@@ -148,6 +155,84 @@ func (r *Replica) runViewChangeTimer() {
 
 		r.mu.Unlock()
 	}
+}
+
+func (r *Replica) stateTransfer() {
+	for peerID := range r.configuration {
+		getStateArgs := GetStateArgs{
+			ReplicaID: r.ID,
+			ViewNum:   r.viewNum,
+			OpNum:     r.opNum,
+			CommitNum: r.commitNum,
+		}
+		var newStateReply NewStateReply
+
+		go func(peerID int) {
+			r.dlog("sending <GET-STATE> to %d: %+v", peerID, getStateArgs)
+			if err := r.server.Call(peerID, "Replica.StateTransfer", getStateArgs, &newStateReply); err == nil {
+				// TODO: state transfer kalau ketinggalan viewNum aja?
+				// kalau misalnya pas viewNumnya sama gimana?
+				// yang dicek viewNum aja atau opNum sama commitNum juga?
+				//
+				// On paper chapter 5.2, TODO for the latter case (recovery when it learned about missing requests in the same viewNum):
+				// there are two cases, depending on whether the slow node has learned that it is missing requests in its current view, or has heard about a later view.
+				r.mu.Lock()
+				defer r.mu.Unlock()
+
+				r.viewNum = newStateReply.ViewNum
+				r.opNum = newStateReply.OpNum
+				r.commitNum = newStateReply.CommitNum
+				// TODO: r.opLog
+
+				r.dlog("received <NEW-STATE> reply %+v", newStateReply)
+			}
+		}(peerID)
+	}
+}
+
+type GetStateArgs struct {
+	ViewNum   int
+	OpNum     int
+	CommitNum int
+	ReplicaID int
+}
+
+type NewStateReply struct {
+	IsReplied bool
+	ViewNum   int
+	OpNum     int
+	CommitNum int
+	OpLog     []interface{}
+	ReplicaID int
+}
+
+func (r *Replica) StateTransfer(args GetStateArgs, reply *NewStateReply) error {
+	if r.status != Normal {
+		return nil
+	}
+	r.dlog("GetState: %+v", args)
+
+	reply.IsReplied = true
+	reply.ReplicaID = r.ID
+	reply.ViewNum = r.viewNum
+	reply.OpNum = r.opNum
+	reply.CommitNum = r.commitNum
+
+	if r.viewNum == args.ViewNum {
+		// TODO:
+		// opLog is the log between <b>opNum</b> in the incoming GetStateArgs
+		// and this replica opNum.
+		reply.OpLog = r.opLog
+	} else if r.viewNum > args.ViewNum {
+		// TODO:
+		// opLog is the log between <b>commitNum</b> in the incoming GetStateArgs
+		// and this replica opNum.
+		reply.OpLog = r.opLog
+	} else if r.viewNum < args.ViewNum {
+		return nil
+	}
+
+	return nil
 }
 
 // When the timeout timer at a particular replica expired after not hearing from the primary after some time,
@@ -224,7 +309,7 @@ func (r *Replica) blastStartViewChange() {
 						return
 					}
 				}
-				r.dlog("received <START-VIEW-CHANGE reply %+v", reply)
+				r.dlog("received <START-VIEW-CHANGE> reply %+v", reply)
 			}
 		}(peerID)
 	}
@@ -496,6 +581,7 @@ func (r *Replica) Commit(args CommitArgs, reply *CommitReply) error {
 	}
 
 	if args.ViewNum > r.viewNum {
+		r.dlog("ARGS VIEWNUM GREATER")
 		r.status = Recovery
 	}
 
