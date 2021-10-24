@@ -169,12 +169,6 @@ func (r *Replica) stateTransfer() {
 		go func(peerID int) {
 			r.dlog("sending <GET-STATE> to %d: %+v", peerID, getStateArgs)
 			if err := r.server.Call(peerID, "Replica.StateTransfer", getStateArgs, &newStateReply); err == nil {
-				// TODO: state transfer kalau ketinggalan viewNum aja?
-				// kalau misalnya pas viewNumnya sama gimana?
-				// yang dicek viewNum aja atau opNum sama commitNum juga?
-				//
-				// On paper chapter 5.2, TODO for the latter case (recovery when it learned about missing requests in the same viewNum):
-				// there are two cases, depending on whether the slow node has learned that it is missing requests in its current view, or has heard about a later view.
 				r.mu.Lock()
 				defer r.mu.Unlock()
 
@@ -220,6 +214,12 @@ func (r *Replica) StateTransfer(args GetStateArgs, reply *NewStateReply) error {
 	reply.CommitNum = r.commitNum
 	reply.PrimaryID = r.primaryID
 
+	// TODO: state transfer kalau ketinggalan viewNum aja?
+	// kalau misalnya pas viewNumnya sama gimana?
+	// yang dicek viewNum aja atau opNum sama commitNum juga?
+	//
+	// On paper chapter 5.2, TODO for the latter case (recovery when it learned about missing requests in the same viewNum):
+	// there are two cases, depending on whether the slow node has learned that it is missing requests in its current view, or has heard about a later view.
 	if r.viewNum == args.ViewNum {
 		// TODO:
 		// opLog is the log between <b>opNum</b> in the incoming GetStateArgs
@@ -407,7 +407,7 @@ func (r *Replica) DoViewChange(args DoViewChangeArgs, reply *DoViewChangeReply) 
 		// oldCommitNum := r.commitNum
 		//
 		// TODO:
-		// For the below operation, upon receiving new state from the most up-to-date backup replicas,
+		// For the operation below, upon receiving new state from the most up-to-date backup replicas,
 		// Also execute all of the uncommited operations.
 		r.viewNum = mostUpToDateBackupReplica.viewNum
 		r.oldViewNum = mostUpToDateBackupReplica.oldViewNum
