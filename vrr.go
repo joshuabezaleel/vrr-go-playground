@@ -493,10 +493,8 @@ func (r *Replica) StartView(args StartViewArgs, reply *StartViewReply) error {
 }
 
 func (r *Replica) becomePrimary() {
-	r.mu.Lock()
 	r.primaryID = r.ID
 	r.status = Normal
-	r.mu.Unlock()
 
 	go func() {
 		ticker := time.NewTicker(50 * time.Millisecond)
