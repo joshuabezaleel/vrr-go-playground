@@ -1,6 +1,7 @@
 package vrr
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -11,6 +12,28 @@ import (
 )
 
 type ReplicaStatus int
+
+// CommitEntry is the data reported by VRR to the commit channel.
+// Each commit entry notifies the client that consensus was reached on a received command
+// and it can be applied to the client's tate machine.
+type CommitEntry struct {
+	// Command is the client command being commited.
+	Command interface{}
+
+	// Index is the log index at which the client command is commited.
+	Index int
+
+	// View is the VRR view number at which the client command is commited.
+	View int
+}
+
+// clientid
+// requestnum
+// operation
+
+// viewnum
+// requestnum
+// response
 
 const (
 	Normal ReplicaStatus = iota
@@ -98,6 +121,30 @@ func NewReplica(ID int, configuration map[int]string, server *Server, ready <-ch
 	}()
 
 	return replica
+}
+
+// clientid
+// requestnum
+// operation
+
+type Request struct {
+	ClientID   int
+	RequestNum int
+	Operation  interface{}
+}
+
+func (r *Replica) Submit(request Request) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.dlog("Submit received by %v: %v", r.status, request.Operation)
+	if r.status == Normal && r.primaryID == r.ID {
+		r.opLog = append(r.opLog, request.Operation)
+		r.dlog("... log=%v", r.opLog...)
+		return true, nil
+	}
+
+	return false, errors.New(fmt.Sprintf("Error submitting command %+v", request.ClientID))
 }
 
 func (r *Replica) Report() (id int, viewNum int, primaryID int) {

@@ -156,3 +156,7 @@ func tlog(format string, a ...interface{}) {
 func sleepMs(n int) {
 	time.Sleep(time.Duration(n) * time.Millisecond)
 }
+
+func (h *Harness) SubmitToReplica(replicaID int, request Request) (bool, error) {
+	return h.cluster[replicaID].replica.Submit(request)
+}
