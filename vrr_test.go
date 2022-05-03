@@ -87,4 +87,6 @@ func TestGoroutineLeak(t *testing.T) {
 
 	h := NewHarness(t, 3)
 	defer h.Shutdown()
+
+	sleepMs(150)
 }

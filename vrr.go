@@ -181,6 +181,12 @@ func (r *Replica) runViewChangeTimer() {
 
 		r.mu.Lock()
 
+		if r.status == Dead {
+			r.dlog("in view change timer state=%s, bailing out", r.status)
+			r.mu.Unlock()
+			return
+		}
+
 		if r.status == ViewChange {
 			r.blastStartViewChange()
 			r.mu.Unlock()
@@ -548,10 +554,16 @@ func (r *Replica) becomePrimary() {
 		defer ticker.Stop()
 
 		for {
+			if r.status == Dead {
+				r.dlog("in view change timer state=%s, bailing out", r.status)
+				return
+			}
+
 			r.sendPrimaryPeriodicCommits()
 			<-ticker.C
 
 			r.mu.Lock()
+
 			if r.primaryID != r.ID {
 				r.mu.Unlock()
 				return
